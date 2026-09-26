@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CraneFleet 塔吊机群控制台</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>CraneFleet 塔吊机群控制台</h1>
+    <nav id="nav">
+      <button data-page="overview" class="active">总览</button>
+      <button data-page="cranes">机群</button>
+      <button data-page="zones">防碰撞区</button>
+      <button data-page="hoist">吊装</button>
+      <button data-page="alarms">告警</button>
+      <button data-page="config">配置</button>
+    </nav>
+    <span class="status" id="conn-status">连接中…</span>
+  </header>
+  <main>
+    <section id="page-overview">
+      <div class="cards" id="overview-cards"></div>
+      <h2>最近动作</h2>
+      <pre id="overview-log"></pre>
+    </section>
+
+    <section id="page-cranes" class="hidden">
+      <h2>机群坐标与基线</h2>
+      <pre id="crane-data"></pre>
+      <div class="actions">
+        <button id="survey-btn">重新放线（±2 米）</button>
+        <button id="reset-crane-btn">解除指令锁定</button>
+      </div>
+    </section>
+
+    <section id="page-zones" class="hidden">
+      <h2>防碰撞区状态</h2>
+      <pre id="zone-data"></pre>
+      <div class="actions">
+        <button id="occupy-a-btn">一号塔上报占用</button>
+        <button id="occupy-b-btn">二号塔上报占用</button>
+        <button id="clear-conflict-btn">解除冲突</button>
+        <button id="slew-start-btn">启动回转</button>
+      </div>
+    </section>
+
+    <section id="page-hoist" class="hidden">
+      <h2>吊装与制动状态</h2>
+      <pre id="hoist-data"></pre>
+      <div class="actions">
+        <button id="lower-btn">落钩</button>
+        <button id="feedback-btn">反馈确认</button>
+        <button id="release-btn">松闸</button>
+        <button id="trolley-btn">变幅</button>
+        <button id="hoist-stop-btn">停止起升</button>
+      </div>
+    </section>
+
+    <section id="page-alarms" class="hidden">
+      <h2>大风与限位</h2>
+      <pre id="alarm-data"></pre>
+      <div class="actions">
+        <button id="wind-alarm-btn">大风告警 14 m/s</button>
+        <button id="wind-clear-btn">大风解除</button>
+        <button id="limit-check-btn">限位巡检</button>
+        <button id="slew-fault-btn">回转驱动故障</button>
+        <button id="slew-recover-btn">故障恢复</button>
+      </div>
+      <h2>审计记录</h2>
+      <pre id="audit-data"></pre>
+    </section>
+
+    <section id="page-config" class="hidden">
+      <h2>站点配置</h2>
+      <pre id="config-data"></pre>
+      <div class="actions">
+        <button id="config-save-btn">安全间距改为 15 米</button>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #eef2f7; color: #1f2933; }
+header { background: #16233a; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+header h1 { font-size: 19px; font-weight: 600; }
+nav { display: flex; gap: 6px; flex-wrap: wrap; }
+nav button { background: transparent; color: #b9c9e0; border: 1px solid transparent; padding: 7px 13px; cursor: pointer; border-radius: 6px; font-size: 14px; }
+nav button.active { background: #2f6fb0; color: #fff; }
+.status { margin-left: auto; font-size: 13px; color: #9fd6a8; }
+.status.offline { color: #ff9b9b; }
+main { padding: 22px; max-width: 1120px; margin: 0 auto; }
+section h2 { margin: 18px 0 10px; font-size: 16px; }
+.hidden { display: none; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.card { background: #fff; border-radius: 10px; padding: 15px; box-shadow: 0 1px 4px rgba(15,35,58,0.12); }
+.card .label { color: #64748b; font-size: 13px; }
+.card .value { font-size: 21px; margin-top: 6px; font-weight: 600; }
+.card.danger .value { color: #c0392b; }
+.card.warn .value { color: #b9770e; }
+pre { background: #fff; border-radius: 10px; padding: 14px; white-space: pre-wrap; word-break: break-all; box-shadow: 0 1px 4px rgba(15,35,58,0.12); font-size: 13px; line-height: 1.5; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.actions button { background: #2f6fb0; color: #fff; border: 0; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; }
+.actions button:active { background: #245486; }
