@@ -43,6 +43,10 @@ class Limit:
         with self._lock:
             return self.generation
 
+    def sequence_now(self) -> int:
+        with self._lock:
+            return self.sequence
+
 
 @dataclass(frozen=True)
 class Envelope:

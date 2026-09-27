@@ -15,6 +15,7 @@
       <button data-page="zones">防碰撞区</button>
       <button data-page="hoist">吊装</button>
       <button data-page="alarms">告警</button>
+      <button data-page="ledger">作业留痕</button>
       <button data-page="config">配置</button>
     </nav>
     <span class="status" id="conn-status">连接中…</span>
@@ -70,6 +71,28 @@
       </div>
       <h2>审计记录</h2>
       <pre id="audit-data"></pre>
+    </section>
+
+    <section id="page-ledger" class="hidden">
+      <h2>作业留痕</h2>
+      <p class="hint">按一段作业导出可核对材料：开工、现场作业、收尾后导出，系统会逐条重算哈希并与现场计数器交叉比对，对不上的条目会明确列出。</p>
+      <pre id="jobs-data"></pre>
+      <div class="actions">
+        <input id="job-title" type="text" placeholder="作业名称，如：主梁吊装">
+        <button id="job-start-btn">开工留痕</button>
+        <button id="job-end-btn">收工留痕</button>
+        <button id="ledger-export-btn">导出本段作业材料</button>
+      </div>
+      <div class="actions">
+        <label class="file-btn">
+          导入材料并核验
+          <input id="ledger-file" type="file" accept=".json,application/json" hidden>
+        </label>
+      </div>
+      <h2>核验结论</h2>
+      <pre id="ledger-report"></pre>
+      <h2>导出材料（JSON）</h2>
+      <pre id="ledger-materials"></pre>
     </section>
 
     <section id="page-config" class="hidden">

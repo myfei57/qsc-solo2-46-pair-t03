@@ -89,3 +89,23 @@ class StaleRelease(LimitError):
 
 class ConfigError(CraneFleetError):
     """Raised when a site configuration payload is invalid."""
+
+
+class JobError(CraneFleetError):
+    """Base class for work-segment book keeping failures."""
+
+
+class JobNotFound(JobError):
+    """Raised when an operation references an unknown work segment."""
+
+
+class JobAlreadyOpen(JobError):
+    """Raised when a second job starts before the open one closes."""
+
+
+class JobAlreadyClosed(JobError):
+    """Raised when an already closed job is closed again."""
+
+
+class LedgerError(CraneFleetError):
+    """Raised when a verifiable ledger bundle cannot be built or parsed."""

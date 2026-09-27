@@ -15,6 +15,8 @@ from . import cluster as fleet
 from . import config as site_config
 from . import crane as crane_module
 from . import hoist as hoist_module
+from . import jobs as jobs_module
+from . import ledger as ledger_module
 from . import limit as limit_module
 from . import slew as slew_module
 from . import trolley as trolley_module
@@ -30,6 +32,10 @@ from .errors import (
     FeedbackNotConfirmed,
     HoistBusy,
     HookNotLowered,
+    JobAlreadyClosed,
+    JobAlreadyOpen,
+    JobNotFound,
+    LedgerError,
     SlewBlocked,
     SlewBusy,
     SlewIdle,
@@ -38,6 +44,7 @@ from .errors import (
     ZoneNotDurable,
 )
 from .hoist import Drum, Hoist
+from .jobs import JobBook, JobRecord
 from .limit import Limit
 from .slew import Ramp, Slew, SpeedFeedback
 from .store import Store
@@ -96,6 +103,7 @@ class Console:
         feedback: SpeedFeedback,
         config: SiteConfig,
         web_root: str = "web",
+        jobs: JobBook | None = None,
     ) -> None:
         self.store = store
         self.cluster = cluster
@@ -110,6 +118,7 @@ class Console:
         self.feedback = feedback
         self.config = config
         self.web_root = web_root
+        self.jobs = jobs if jobs is not None else JobBook()
         self.ramp = Ramp()
         self.drum = Drum(0.8)
         self.speedometer = Speedometer()
@@ -145,6 +154,11 @@ class Console:
             ("GET", "/api/config"): self.handle_config,
             ("POST", "/api/config"): self.handle_config_save,
             ("GET", "/api/audit"): self.handle_audit,
+            ("GET", "/api/jobs"): self.handle_jobs,
+            ("POST", "/api/jobs/start"): self.handle_job_start,
+            ("POST", "/api/jobs/end"): self.handle_job_end,
+            ("POST", "/api/ledger/export"): self.handle_ledger_export,
+            ("POST", "/api/ledger/verify"): self.handle_ledger_verify,
         }
 
     @property
@@ -180,6 +194,7 @@ class Console:
         if not crane_id:
             return 400, fail("crane_id required")
         zone_module.occupy(self.zone, crane_id)
+        self.audit.record(crane_id, "zone-occupy", f"zone={self.zone.id}")
         try:
             zone_module.persist(self.zone, self.store)
         except StoreError as exc:
@@ -207,10 +222,8 @@ class Console:
             return 400, fail("bad request")
         crane_id = str(request.body.get("crane_id") or "")
         zone_module.vacate(self.zone, crane_id)
-        try:
-            zone_module.persist(self.zone, self.store)
-        except StoreError as exc:
-            LOGGER.debug("best-effort zone persist skipped after vacate: %s", exc)
+        self.audit.record(crane_id, "zone-vacate", f"zone={self.zone.id}")
+        zone_module.persist(self.zone, self.store)
         return 200, ok(zone_module.occupants_snapshot(self.zone))
 
     def handle_zone_clear(self, request: Request) -> tuple[int, dict[str, Any]]:
@@ -474,6 +487,99 @@ class Console:
         else:
             entries = self.audit.query(crane_id, limit)
         return 200, ok([entry.to_dict() for entry in entries])
+
+    # ------------------------------------------------------------------- jobs
+
+    def site_fingerprint(self) -> dict[str, int]:
+        return ledger_module.site_fingerprint(self.zone, self.audit, self)
+
+    def handle_jobs(self, request: Request) -> tuple[int, dict[str, Any]]:
+        active = self.jobs.active()
+        return 200, ok(
+            {
+                "active": active.to_dict() if active else None,
+                "jobs": [record.to_dict() for record in self.jobs.list()],
+            }
+        )
+
+    def handle_job_start(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        title = str(request.body.get("title") or "").strip()
+        if not title:
+            return 400, fail("title required")
+        job_id = str(request.body.get("job_id") or "").strip()
+        site = str(request.body.get("site") or self.config.site_name)
+        try:
+            record = self.jobs.start(
+                self.audit, self.site_fingerprint, title, site=site, job_id=job_id
+            )
+            jobs_module.save_jobs(self.store, self.jobs)
+        except JobAlreadyOpen as exc:
+            return 409, fail(str(exc))
+        except StoreError as exc:
+            return 500, fail(str(exc))
+        return 200, ok(record.to_dict())
+
+    def handle_job_end(self, request: Request) -> tuple[int, dict[str, Any]]:
+        job_id = str(request.body.get("job_id") or "") if request.body_valid else ""
+        try:
+            record = self.jobs.finish(self.audit, self.site_fingerprint, job_id)
+            jobs_module.save_jobs(self.store, self.jobs)
+        except JobAlreadyClosed as exc:
+            return 409, fail(str(exc))
+        except JobNotFound as exc:
+            return 404, fail(str(exc))
+        except StoreError as exc:
+            return 500, fail(str(exc))
+        return 200, ok(record.to_dict())
+
+    # ----------------------------------------------------------------- ledger
+
+    def handle_ledger_export(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        job_id = str(request.body.get("job_id") or "").strip()
+        try:
+            record = self.jobs.get(job_id) if job_id else self._require_active_or_latest_closed()
+        except JobNotFound as exc:
+            return 404, fail(str(exc))
+        if record is None:
+            return 404, fail("job not found")
+        try:
+            materials = ledger_module.build_materials(
+                record, self.audit, live_fingerprint=self.site_fingerprint()
+            )
+            ledger_module.save_export(self.store, materials)
+        except (ValueError, LedgerError, StoreError) as exc:
+            return 500, fail(str(exc))
+        report = ledger_module.verify_materials(materials, self.audit, self.zone)
+        return 200, ok({"materials": materials, "verification": report})
+
+    def handle_ledger_verify(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        payload = request.body.get("materials")
+        if payload is None:
+            payload = request.body
+        try:
+            materials = ledger_module.parse_materials(payload)
+        except (ValueError, TypeError) as exc:
+            return 400, fail(f"留痕材料无法解析：{exc}")
+        report = ledger_module.verify_materials(materials, self.audit, self.zone)
+        report["text"] = ledger_module.render_report(report)
+        status = 200
+        if report["conclusion"] == ledger_module.CONCLUSION_INCONSISTENT:
+            status = 409
+        return status, ok(report)
+
+    def _require_active_or_latest_closed(self) -> JobRecord | None:
+        active = self.jobs.active()
+        if active is not None:
+            return active
+        for record in self.jobs.list():
+            return record
+        return None
 
 
 def _number(value: Any) -> float:

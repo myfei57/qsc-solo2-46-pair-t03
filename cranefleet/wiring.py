@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import cluster as fleet
 from . import config as site_config
+from . import jobs as jobs_module
 from . import slew as slew_module
 from . import zone as zone_module
 from .audit import Audit, AuditEntry
@@ -17,6 +18,7 @@ from .crane import Crane
 from .errors import StoreNotFound
 from .geometry import Point
 from .hoist import Hoist
+from .jobs import JOB_STATUS_OPEN, JobBook
 from .limit import Limit
 from .slew import Slew, SpeedFeedback
 from .store import FileStore, MemoryStore, Store, decode_snapshot, encode_snapshot
@@ -35,6 +37,7 @@ class App:
     console: Console
     store: Store
     audit: Audit
+    jobs: JobBook
     snapshot_path: Path | None
 
     def shutdown(self) -> None:
@@ -42,6 +45,7 @@ class App:
 
         self.audit.record("system", "shutdown", "control service stopping")
         flush_audit(self.store, self.audit)
+        jobs_module.save_jobs(self.store, self.jobs)
         site_config.save_config(self.store, self.console.config)
         if self.snapshot_path is not None:
             self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,6 +83,11 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
     limit = Limit()
     audit = Audit(1000)
     restore_audit(store, audit)
+    jobs = JobBook()
+    jobs_module.restore_jobs(store, jobs)
+    active_job = jobs.active()
+    if active_job is not None:
+        audit.begin_job_scope(active_job.job_id)
     feedback = SpeedFeedback("crane-1")
     slew_module.restore_feedback(feedback, store)
     cranes = {"crane-1": Crane("crane-1")}
@@ -98,9 +107,10 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
         feedback=feedback,
         config=config,
         web_root=web_root,
+        jobs=jobs,
     )
     audit.record("system", "boot", "control service started")
-    return App(console=console, store=store, audit=audit, snapshot_path=snapshot_path)
+    return App(console=console, store=store, audit=audit, jobs=jobs, snapshot_path=snapshot_path)
 
 
 def restore_boot(store: Store, snapshot_path: Path) -> None:

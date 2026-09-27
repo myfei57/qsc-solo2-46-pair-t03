@@ -20,3 +20,6 @@ pre { background: #fff; border-radius: 10px; padding: 14px; white-space: pre-wra
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .actions button { background: #2f6fb0; color: #fff; border: 0; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; }
 .actions button:active { background: #245486; }
+.actions input[type="text"] { border: 1px solid #c3ccd9; border-radius: 6px; padding: 8px 12px; font-size: 14px; min-width: 240px; }
+.file-btn { background: #4a7c59; color: #fff; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; display: inline-block; }
+.hint { color: #64748b; font-size: 13px; margin: 6px 0 12px; line-height: 1.6; }

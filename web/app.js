@@ -172,5 +172,103 @@ $("config-save-btn").addEventListener("click", async () => {
   refresh();
 });
 
+// ------------------------------------------------------------- 作业留痕
+
+async function refreshJobs() {
+  const result = await api("/api/jobs");
+  const data = result.data || { active: null, jobs: [] };
+  $("jobs-data").textContent = JSON.stringify(
+    {
+      current: data.active ? `${data.active.title}（${data.active.job_id.slice(0, 8)}，进行中）` : "无进行中的作业",
+      jobs: (data.jobs || []).map((job) => ({
+        job_id: job.job_id,
+        title: job.title,
+        status: job.status,
+        started_at: job.started_at,
+        ended_at: job.ended_at,
+        seq_window: `${job.start_seq}-${job.end_seq || "…"}`,
+      })),
+    },
+    null,
+    2,
+  );
+}
+
+$("job-start-btn").addEventListener("click", async () => {
+  const title = $("job-title").value.trim();
+  if (!title) {
+    $("ledger-report").textContent = "请先填写作业名称。";
+    return;
+  }
+  const result = await post("/api/jobs/start", { title });
+  $("ledger-report").textContent = result.ok
+    ? `已开工留痕：${result.data.job_id}（从第 ${result.data.start_seq} 条记录开始）`
+    : `开工失败：${result.error}`;
+  $("job-title").value = "";
+  refreshJobs();
+});
+
+$("job-end-btn").addEventListener("click", async () => {
+  const result = await post("/api/jobs/end");
+  $("ledger-report").textContent = result.ok
+    ? `已收工留痕：作业窗口 第 ${result.data.start_seq}–${result.data.end_seq} 条`
+    : `收工失败：${result.error}`;
+  refreshJobs();
+});
+
+$("ledger-export-btn").addEventListener("click", async () => {
+  const result = await post("/api/ledger/export", {});
+  if (!result.ok) {
+    $("ledger-report").textContent = `导出失败：${result.error}`;
+    return;
+  }
+  const { materials, verification } = result.data;
+  $("ledger-materials").textContent = JSON.stringify(materials, null, 2);
+  $("ledger-report").textContent = verification_text(verification);
+});
+
+$("ledger-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch (error) {
+    $("ledger-report").textContent = `材料无法解析：${error}`;
+    return;
+  }
+  const response = await fetch("/api/ledger/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ materials: parsed }),
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    $("ledger-report").textContent = `核验请求失败：${result.error}`;
+    return;
+  }
+  $("ledger-materials").textContent = JSON.stringify(parsed, null, 2);
+  $("ledger-report").textContent = result.data.text || verification_text(result.data);
+  event.target.value = "";
+});
+
+function verification_text(report) {
+  const lines = [];
+  lines.push(`结论：${report.conclusion}`);
+  for (const row of report.entry_results || []) {
+    lines.push(`[${row.status === "ok" ? "✓" : "✗"}] 第 ${row.seq} 条 ${row.action} — ${row.message}`);
+  }
+  for (const check of report.checks || []) {
+    if (check.message) lines.push(`[${check.status === "ok" ? "✓" : "✗"}] ${check.message}`);
+  }
+  for (const finding of report.findings || []) {
+    if (!lines.includes(finding.message)) lines.push(`✗ [${finding.scope}] ${finding.message}`);
+  }
+  return lines.join("\n");
+}
+
+refreshJobs();
+setInterval(refreshJobs, 5000);
+
 setInterval(refresh, 3000);
 refresh();
