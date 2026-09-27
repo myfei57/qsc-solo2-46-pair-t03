@@ -15,6 +15,7 @@
       <button data-page="zones">防碰撞区</button>
       <button data-page="hoist">吊装</button>
       <button data-page="alarms">告警</button>
+      <button data-page="evidence">留痕核对</button>
       <button data-page="config">配置</button>
     </nav>
     <span class="status" id="conn-status">连接中…</span>
@@ -70,6 +71,22 @@
       </div>
       <h2>审计记录</h2>
       <pre id="audit-data"></pre>
+    </section>
+
+    <section id="page-evidence" class="hidden">
+      <h2>作业段留痕核对</h2>
+      <div class="actions">
+        <input id="job-id" type="text" placeholder="作业段编号，如 J-2026-0926-01">
+        <input id="job-label" type="text" placeholder="作业说明（可选）">
+        <button id="job-start-btn">开工登记</button>
+        <button id="job-end-btn">收工登记</button>
+      </div>
+      <pre id="job-list"></pre>
+      <div class="actions">
+        <button id="evidence-export-btn">导出并核对当前作业</button>
+        <button id="evidence-verify-btn">复验上次导出件</button>
+      </div>
+      <pre id="evidence-report"></pre>
     </section>
 
     <section id="page-config" class="hidden">

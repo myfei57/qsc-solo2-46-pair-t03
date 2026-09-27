@@ -21,6 +21,7 @@ from . import trolley as trolley_module
 from . import views
 from . import wind as wind_module
 from . import zone as zone_module
+from . import evidence
 from .audit import Audit
 from .cluster import Cluster
 from .config import ConfigError, SiteConfig
@@ -96,6 +97,7 @@ class Console:
         feedback: SpeedFeedback,
         config: SiteConfig,
         web_root: str = "web",
+        job_book: evidence.JobBook | None = None,
     ) -> None:
         self.store = store
         self.cluster = cluster
@@ -110,6 +112,7 @@ class Console:
         self.feedback = feedback
         self.config = config
         self.web_root = web_root
+        self.job_book = job_book if job_book is not None else evidence.JobBook()
         self.ramp = Ramp()
         self.drum = Drum(0.8)
         self.speedometer = Speedometer()
@@ -145,6 +148,11 @@ class Console:
             ("GET", "/api/config"): self.handle_config,
             ("POST", "/api/config"): self.handle_config_save,
             ("GET", "/api/audit"): self.handle_audit,
+            ("GET", "/api/evidence/jobs"): self.handle_jobs,
+            ("POST", "/api/evidence/job/start"): self.handle_job_start,
+            ("POST", "/api/evidence/job/end"): self.handle_job_end,
+            ("GET", "/api/evidence/export"): self.handle_evidence_export,
+            ("POST", "/api/evidence/verify"): self.handle_evidence_verify,
         }
 
     @property
@@ -187,6 +195,7 @@ class Console:
         conflicts, mismatches = fleet.check_conflicts(
             self.cluster, self.zone, self.config.safe_separation
         )
+        self.audit.record(crane_id, "zone-occupy", "registered")
         if conflicts:
             zone_module.register_conflict(self.zone, conflicts[0].crane_ids)
             zone_module.lock_zone(self.zone)
@@ -222,6 +231,8 @@ class Console:
             zone_module.persist(self.zone, self.store)
         except StoreError as exc:
             LOGGER.debug("best-effort zone persist skipped after clear: %s", exc)
+        for crane_id in zone_module.occupants_snapshot(self.zone):
+            self.audit.record(crane_id, "zone-release", f"generation={generation}")
         self.audit.record("system", "zone-clear", f"{self.zone.id} generation={generation}")
         return 200, ok(views.zone_view(self))
 
@@ -290,9 +301,10 @@ class Console:
         self.gust.observe(level)
         wind_module.latch_limits(self.wind, self.limit)
         try:
-            wind_module.alarm(self.wind, self.slew, self.hoist, self.audit)
+            sequence = wind_module.alarm(self.wind, self.slew, self.hoist, self.audit)
         except SlewStopNotAcknowledged:
             return 409, fail("slew stop was not acknowledged")
+        self.audit.record("system", "wind-alarm", f"level={_number(request.body.get('level'))} seq={sequence}")
         return 200, ok(views.wind_view(self))
 
     def handle_wind_clear(self, request: Request) -> tuple[int, dict[str, Any]]:
@@ -313,6 +325,11 @@ class Console:
             crane_module.apply_remote(crane, command)
         else:
             crane_module.apply_cab(crane, command)
+        self.audit.record(
+            crane.id,
+            "crane-command",
+            f"source={command.source} action={command.action} seq={crane.command_sequence()}",
+        )
         self._book_keeping(command)
         try:
             crane_module.execute(crane, self.slew, self.trolley, self.hoist, self.audit)
@@ -474,6 +491,96 @@ class Console:
         else:
             entries = self.audit.query(crane_id, limit)
         return 200, ok([entry.to_dict() for entry in entries])
+
+    # --------------------------------------------------------------- evidence
+
+    def handle_jobs(self, request: Request) -> tuple[int, dict[str, Any]]:
+        return 200, ok([job.to_dict() for job in self.job_book.list()])
+
+    def handle_job_start(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        job_id = str(request.body.get("job_id") or "").strip()
+        if not job_id:
+            return 400, fail("job_id required")
+        if self.job_book.get(job_id) is not None:
+            return 409, fail("job already declared")
+        if self.job_book.open_jobs():
+            return 409, fail("another job is still open")
+        label = str(request.body.get("label") or "")
+        entry = self.audit.record("system", evidence.JOB_OPEN, f"job={job_id} {label}".rstrip())
+        job = evidence.JobSegment(
+            job_id=job_id,
+            label=label,
+            opened_at=entry.recorded_at,
+            opened_seq=entry.seq,
+            open_counters=evidence.counter_snapshot(self),
+            digest=entry.digest,
+        )
+        self.job_book.add(job)
+        try:
+            self.job_book.save(self.store)
+        except StoreError as exc:
+            return 500, fail(str(exc))
+        return 200, ok(job.to_dict())
+
+    def handle_job_end(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        job_id = str(request.body.get("job_id") or "").strip()
+        job = self.job_book.get(job_id)
+        if job is None:
+            return 404, fail("job not found")
+        if job.is_closed:
+            return 409, fail("job already closed")
+        entry = self.audit.record("system", evidence.JOB_CLOSE, f"job={job.job_id}")
+        closed = evidence.JobSegment(
+            job_id=job.job_id,
+            label=job.label,
+            opened_at=job.opened_at,
+            opened_seq=job.opened_seq,
+            open_counters=job.open_counters,
+            closed_at=entry.recorded_at,
+            closed_seq=entry.seq,
+            close_counters=evidence.counter_snapshot(self),
+            digest=entry.digest,
+        )
+        self.job_book.add(closed)
+        try:
+            self.job_book.save(self.store)
+        except StoreError as exc:
+            return 500, fail(str(exc))
+        return 200, ok(closed.to_dict())
+
+    def handle_evidence_export(self, request: Request) -> tuple[int, dict[str, Any]]:
+        job_id = request.query_first("job") or ""
+        job = self.job_book.get(job_id) if job_id else None
+        if job_id and job is None:
+            return 404, fail("job not found")
+        start_at = request.query_first("from") or ""
+        end_at = request.query_first("to") or ""
+        crane_id = request.query_first("crane") or ""
+        if not job_id and not start_at and not end_at:
+            return 400, fail("job or a from/to time window is required")
+        bundle = evidence.build_bundle(
+            self, job=job, start_at=start_at, end_at=end_at, crane_id=crane_id
+        )
+        persisted = ""
+        if job is not None:
+            try:
+                persisted = evidence.save_bundle(self.store, job.job_id, bundle)
+            except StoreError as exc:
+                LOGGER.warning("evidence bundle persist failed: %s", exc)
+        bundle["persisted_key"] = persisted
+        return 200, ok(bundle)
+
+    def handle_evidence_verify(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        bundle = request.body.get("bundle")
+        if not isinstance(bundle, dict):
+            return 400, fail("bundle required")
+        return 200, ok(evidence.verify_bundle(self, bundle))
 
 
 def _number(value: Any) -> float:

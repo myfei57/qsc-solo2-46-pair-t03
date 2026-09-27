@@ -20,3 +20,6 @@ pre { background: #fff; border-radius: 10px; padding: 14px; white-space: pre-wra
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .actions button { background: #2f6fb0; color: #fff; border: 0; border-radius: 6px; padding: 9px 15px; cursor: pointer; font-size: 14px; }
 .actions button:active { background: #245486; }
+.actions input { border: 1px solid #c3cedb; border-radius: 6px; padding: 8px 12px; font-size: 14px; min-width: 220px; }
+.evidence-pass { border-left: 5px solid #2e7d32; }
+.evidence-fail { border-left: 5px solid #c0392b; background: #fdecea; }

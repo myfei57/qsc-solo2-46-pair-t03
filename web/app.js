@@ -172,5 +172,81 @@ $("config-save-btn").addEventListener("click", async () => {
   refresh();
 });
 
+let lastBundle = null;
+
+async function refreshJobs() {
+  const result = await api("/api/evidence/jobs");
+  $("job-list").textContent = JSON.stringify(result.data || [], null, 2);
+  const open = (result.data || []).find((job) => !job.closed_at);
+  if (open && !$("job-id").value) {
+    $("job-id").value = open.job_id;
+  }
+  return open;
+}
+
+function renderEvidence(bundle) {
+  const report = $("evidence-report");
+  report.classList.toggle("evidence-fail", !bundle.passed);
+  report.classList.toggle("evidence-pass", bundle.passed);
+  report.textContent = bundle.report || JSON.stringify(bundle, null, 2);
+}
+
+$("job-start-btn").addEventListener("click", async () => {
+  const jobId = $("job-id").value.trim();
+  if (!jobId) {
+    $("evidence-report").textContent = "请先填写作业段编号";
+    return;
+  }
+  const result = await post("/api/evidence/job/start", {
+    job_id: jobId,
+    label: $("job-label").value.trim(),
+  });
+  $("evidence-report").textContent = result.ok
+    ? "已开工：" + JSON.stringify(result.data, null, 2)
+    : "开工失败：" + result.error;
+  refreshJobs();
+});
+
+$("job-end-btn").addEventListener("click", async () => {
+  const jobId = $("job-id").value.trim();
+  const result = await post("/api/evidence/job/end", { job_id: jobId });
+  $("evidence-report").textContent = result.ok
+    ? "已收工：" + JSON.stringify(result.data, null, 2)
+    : "收工失败：" + result.error;
+  refreshJobs();
+});
+
+$("evidence-export-btn").addEventListener("click", async () => {
+  const open = await refreshJobs();
+  const jobId = (open && open.job_id) || $("job-id").value.trim();
+  if (!jobId) {
+    $("evidence-report").textContent = "没有可导出的作业段";
+    return;
+  }
+  const result = await api("/api/evidence/export?job=" + encodeURIComponent(jobId));
+  if (!result.ok) {
+    $("evidence-report").textContent = "导出失败：" + result.error;
+    return;
+  }
+  lastBundle = result.data;
+  renderEvidence(lastBundle);
+});
+
+$("evidence-verify-btn").addEventListener("click", async () => {
+  if (!lastBundle) {
+    $("evidence-report").textContent = "请先导出一份材料再复验";
+    return;
+  }
+  const result = await post("/api/evidence/verify", { bundle: lastBundle });
+  const data = result.data || {};
+  $("evidence-report").textContent = data.ok
+    ? "复验通过：导出件与当前台账逐条一致。"
+    : "复验不通过：\n" + JSON.stringify(data.findings, null, 2);
+  $("evidence-report").classList.toggle("evidence-fail", !data.ok);
+  $("evidence-report").classList.toggle("evidence-pass", !!data.ok);
+});
+
+refreshJobs();
+
 setInterval(refresh, 3000);
 refresh();

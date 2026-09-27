@@ -15,6 +15,7 @@ from .cluster import Cluster
 from .console import Console
 from .crane import Crane
 from .errors import StoreNotFound
+from .evidence import JobBook
 from .geometry import Point
 from .hoist import Hoist
 from .limit import Limit
@@ -79,6 +80,7 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
     limit = Limit()
     audit = Audit(1000)
     restore_audit(store, audit)
+    job_book = JobBook.load(store)
     feedback = SpeedFeedback("crane-1")
     slew_module.restore_feedback(feedback, store)
     cranes = {"crane-1": Crane("crane-1")}
@@ -98,6 +100,7 @@ def build_app(data_dir: str = "data", web_root: str = "web") -> App:
         feedback=feedback,
         config=config,
         web_root=web_root,
+        job_book=job_book,
     )
     audit.record("system", "boot", "control service started")
     return App(console=console, store=store, audit=audit, snapshot_path=snapshot_path)
